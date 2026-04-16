@@ -2,6 +2,9 @@
 
 Dashboard web en Flask con tabla interactiva, filtros dinamicos, graficos y exportacion a Excel/CSV.
 
+![Dashboard - Tabla y filtros](screenshot.png)
+![Dashboard - Graficos](screenshot2.png)
+
 ## Que hace
 
 - Muestra tabla de ventas paginada y ordenable por cualquier columna
