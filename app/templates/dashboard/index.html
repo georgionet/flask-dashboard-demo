@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Dashboard de Ventas{% endblock %}
+
+{% block content %}
+<!-- Filtros -->
+<form method="get" class="bg-white rounded-lg shadow p-4 mb-6">
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Fecha desde</label>
+            <input type="date" name="fecha_desde" value="{{ filters.get('fecha_desde', '') }}"
+                   class="w-full border rounded px-3 py-2 text-sm">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Fecha hasta</label>
+            <input type="date" name="fecha_hasta" value="{{ filters.get('fecha_hasta', '') }}"
+                   class="w-full border rounded px-3 py-2 text-sm">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Categoria</label>
+            <select name="categoria" class="w-full border rounded px-3 py-2 text-sm">
+                <option value="">Todas</option>
+                {% for c in categories %}
+                <option value="{{ c }}" {{ 'selected' if filters.get('categoria') == c }}>{{ c }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Ciudad</label>
+            <select name="ciudad" class="w-full border rounded px-3 py-2 text-sm">
+                <option value="">Todas</option>
+                {% for c in cities %}
+                <option value="{{ c }}" {{ 'selected' if filters.get('ciudad') == c }}>{{ c }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Cliente</label>
+            <input type="text" name="cliente" value="{{ filters.get('cliente', '') }}"
+                   placeholder="Buscar..." class="w-full border rounded px-3 py-2 text-sm">
+        </div>
+    </div>
+    <div class="flex gap-2 mt-3">
+        <button type="submit" class="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded text-sm font-medium">Filtrar</button>
+        <a href="/" class="bg-gray-300 hover:bg-gray-400 text-gray-700 px-4 py-2 rounded text-sm font-medium">Limpiar</a>
+    </div>
+</form>
+
+<!-- KPIs -->
+<div class="grid grid-cols-3 gap-4 mb-6">
+    <div class="bg-white rounded-lg shadow p-4 text-center">
+        <p class="text-sm text-gray-500">Total Registros</p>
+        <p class="text-2xl font-bold text-slate-800">{{ total }}</p>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4 text-center">
+        <p class="text-sm text-gray-500">Unidades Vendidas</p>
+        <p class="text-2xl font-bold text-slate-800">{{ "{:,.0f}".format(qty_sum) }}</p>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4 text-center">
+        <p class="text-sm text-gray-500">Monto Total</p>
+        <p class="text-2xl font-bold text-green-600">${{ "${:,.0f}".format(total_sum) }}</p>
+    </div>
+</div>
+
+<!-- Tabla -->
+<div class="bg-white rounded-lg shadow overflow-x-auto mb-6">
+    <table class="w-full text-sm">
+        <thead class="bg-slate-700 text-white">
+            <tr>
+                {% for col in columns %}
+                {% if col != 'id' %}
+                <th class="px-4 py-3 text-left">
+                    <a href="{{ sort_urls[col] }}"
+                       class="hover:underline">
+                        {{ col|replace('_', ' ')|title }}
+                        {% if sort_col == col %}{{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}
+                    </a>
+                </th>
+                {% endif %}
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr class="border-b hover:bg-gray-50">
+                {% for col in columns %}
+                {% if col != 'id' %}
+                <td class="px-4 py-2 {{ 'text-right font-medium' if col in ('total', 'precio_unitario', 'cantidad') }}">
+                    {% if col == 'total' or col == 'precio_unitario' %}
+                        ${{ "${:,.0f}".format(row[col]) }}
+                    {% else %}
+                        {{ row[col] }}
+                    {% endif %}
+                </td>
+                {% endif %}
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Paginacion -->
+{% if total_pages > 1 %}
+<div class="flex justify-center gap-2 mb-6">
+    {% for p, url in page_urls.items() %}
+    <a href="{{ url }}"
+       class="px-3 py-1 rounded {{ 'bg-slate-700 text-white' if p == page else 'bg-white border hover:bg-gray-100' }}">
+        {{ p }}
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Graficos -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-white rounded-lg shadow p-4">
+        <h3 class="font-semibold text-gray-700 mb-3">Ventas por Categoria</h3>
+        <canvas id="chartCategoria"></canvas>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4">
+        <h3 class="font-semibold text-gray-700 mb-3">Top 5 Clientes</h3>
+        <canvas id="chartClientes"></canvas>
+    </div>
+</div>
+<div class="bg-white rounded-lg shadow p-4 mb-6">
+    <h3 class="font-semibold text-gray-700 mb-3">Ventas por Fecha</h3>
+    <canvas id="chartTiempo"></canvas>
+</div>
+
+<script>
+    // Barras - Categoria
+    new Chart(document.getElementById('chartCategoria'), {
+        type: 'bar',
+        data: {
+            labels: [{% for d in cat_data %}'{{ d.categoria }}'{% if not loop.last %},{% endif %}{% endfor %}],
+            datasets: [{
+                label: 'Total Ventas',
+                data: [{% for d in cat_data %}{{ d.total }}{% if not loop.last %},{% endif %}{% endfor %}],
+                backgroundColor: ['#1F4E79','#2E86C1','#48C9B0','#F39C12','#E74C3C','#8E44AD'],
+                borderRadius: 4
+            }]
+        },
+        options: { responsive: true, plugins: { legend: { display: false } } }
+    });
+
+    // Torta - Clientes
+    new Chart(document.getElementById('chartClientes'), {
+        type: 'doughnut',
+        data: {
+            labels: [{% for d in client_data %}'{{ d.cliente }}'{% if not loop.last %},{% endif %}{% endfor %}],
+            datasets: [{
+                data: [{% for d in client_data %}{{ d.total }}{% if not loop.last %},{% endif %}{% endfor %}],
+                backgroundColor: ['#1F4E79','#2E86C1','#48C9B0','#F39C12','#E74C3C']
+            }]
+        },
+        options: { responsive: true }
+    });
+
+    // Linea - Tiempo
+    new Chart(document.getElementById('chartTiempo'), {
+        type: 'line',
+        data: {
+            labels: [{% for d in time_data %}'{{ d.fecha }}'{% if not loop.last %},{% endif %}{% endfor %}],
+            datasets: [{
+                label: 'Ventas',
+                data: [{% for d in time_data %}{{ d.total }}{% if not loop.last %},{% endif %}{% endfor %}],
+                borderColor: '#1F4E79',
+                backgroundColor: 'rgba(31,78,121,0.1)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 3
+            }]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    });
+</script>
+{% endblock %}
